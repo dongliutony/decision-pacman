@@ -112,6 +112,8 @@ function makePolicy() {
   // "random" and "random-1s" are scripted baselines that need no model.
   const random = randomByName(config.model, config.seed);
   if (random) return random;
+  // "jev-latest" (TypeSafe's hosted Jev) goes through the dev server's /jev proxy, which adds TYPESAFE_API_KEY.
+  if (import.meta.env.DEV && config.model.startsWith("jev-")) return systemOnePolicy({ baseUrl: "/jev", model: config.model, hosted: true });
   // "llm:<model>" is a plain Ollama chat model answering in constrained JSON, not a decision model.
   if (config.model.startsWith("llm:")) return llmPolicy({ baseUrl: config.endpoint, model: config.model.slice("llm:".length) });
   // "openai:<model>" is OpenAI's Decisions API. The dev server proxies /openai and adds OPENAI_API_KEY, so the key never reaches the page.
@@ -371,13 +373,17 @@ function setupControls(): void {
   };
 }
 
+/** Players offered in the model list whatever the endpoint serves: hosted Jev (dev server only) and the scripted ones. */
+const BUILT_IN_PLAYERS = [...(import.meta.env.DEV ? ["jev-latest"] : []), "random", "random-1s", "random-2s"];
+
 async function loadModels(): Promise<void> {
   if (bridge) return;
+  const list = $("model-list");
+  list.innerHTML = "";
+  for (const name of BUILT_IN_PLAYERS) list.appendChild(new Option(name, name));
   try {
     const res = await fetch(`${config.endpoint.replace(/\/$/, "")}/api/tags`);
     const body = (await res.json()) as { models?: { name: string }[] };
-    const list = $("model-list");
-    list.innerHTML = "";
     for (const m of body.models ?? []) list.appendChild(new Option(m.name, m.name));
   } catch {
     // The model list is a convenience; decisions report their own errors.

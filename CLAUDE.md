@@ -10,6 +10,7 @@ The project rules, directory map, and environment live in `AGENTS.md`. Follow th
 
 - Discuss with the user in Chinese (中文) in this project.
 - The branch `local/learning-poc` is the user's own local learning and POC branch. It is not meant for PRs to the upstream repo. If the work needs a remote later, the user will fork the repo first.
+- `docs/local-usage.zh.md` is the user's Chinese how-to for this branch (Jev, local model, random players). Keep it current when those commands change.
 
 ## Commands
 
