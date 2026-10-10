@@ -6,11 +6,13 @@ The project rules, directory map, and environment live in `AGENTS.md`. Follow th
 
 @AGENTS.md
 
-## Language
+## Language and repo setup
 
-- Discuss with the user in Chinese (中文) in this project.
-- The branch `local/learning-poc` is the user's own local learning and POC branch. It is not meant for PRs to the upstream repo. If the work needs a remote later, the user will fork the repo first.
-- `docs/local-usage.zh.md` is the user's Chinese how-to for this branch (Jev, local model, random players). Keep it current when those commands change.
+- Chat with the user in Chinese (中文).
+- Write everything that goes into a file in English: code, comments, docs, commit messages, PR text, and memory files.
+- The user works in their own fork for learning, research, and improvements. `origin` is the fork (`dongliutony/decision-pacman`); `upstream` is the original repo (`grapeot/decision-pacman`), used only to fetch updates. Never push to or open PRs against `upstream`.
+- The branch `local/learning-poc` holds this work.
+- `docs/local-usage.md` is the how-to for this branch (hosted Jev, the local model, random players). Keep it current when those commands change.
 
 ## Commands
 
