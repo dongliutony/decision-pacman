@@ -1,4 +1,4 @@
-import { greedyPolicy, randomPolicy, systemOnePolicy, type Policy } from "./policies.ts";
+import { greedyPolicy, randomByName, systemOnePolicy, type Policy } from "./policies.ts";
 import { oraclePolicy } from "./oracle.ts";
 import { llmPolicy } from "./llm.ts";
 import { decisionsPolicy, DECISIONS_DEFAULT_BASE_URL } from "./decisions.ts";
@@ -19,14 +19,16 @@ export interface PolicyEnv {
 }
 
 /**
- * Policies by name: "random", "greedy", "jev" (TypeSafe's hosted Jev), "openai:<model>" (OpenAI's Decisions API,
+ * Policies by name: "random", "random-1s" (one random exit per junction; once per second, go on or turn back
+ * at 3:1; "random-2.5s" sets the interval), "greedy", "jev" (TypeSafe's hosted Jev), "openai:<model>" (OpenAI's Decisions API,
  * e.g. "openai:gpt-6-luna"), "oracle" (engine rollouts; "oracle-8s-x2"
  * sets an 8 s horizon and 2 samples), "teacher", "teacher-think", and "-peek5s" variants that also show a 5 s simulated future per option (the
  * chat model from TEACHER_BASE_URL / TEACHER_MODEL), "llm:<model>" (a plain Ollama chat model answering in JSON
  * constrained to the legal options), or any decision model name served on the /v1/systemone endpoint.
  */
 export function makePolicy(name: string, seed: number, env: PolicyEnv): Policy {
-  if (name === "random") return randomPolicy(seed);
+  const random = randomByName(name, seed);
+  if (random) return random;
   if (name === "greedy") return greedyPolicy();
   if (name === "jev") {
     // TypeSafe's hosted API speaks the same /v1/systemone protocol as Ollama.
