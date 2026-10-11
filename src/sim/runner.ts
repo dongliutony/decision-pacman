@@ -1,11 +1,11 @@
 // Drives one seeded game with a policy, headless. Shared by the evaluation
 // runner and the teacher data generator so both see the same game.
-import { LatencyEstimate, lookaheadTiles } from "../agent/loop.ts";
+import { LatencyEstimate, lookaheadTiles, ReverseLock } from "../agent/loop.ts";
 import type { Policy, PolicyDecision } from "../agent/policies.ts";
 import { findDecisionPoint, isStillAhead, type DecisionPoint } from "../engine/decision.ts";
 import { createGame, step, TPS } from "../engine/game.ts";
 import type { GameState, StepInput } from "../engine/types.ts";
-import { optionToInput, type EncodedDecision, type Encoder } from "../encoders/types.ts";
+import { optionToInput, withoutBack, type EncodedDecision, type Encoder } from "../encoders/types.ts";
 
 export type Clock = "realtime" | "lockstep";
 
@@ -21,6 +21,8 @@ export interface GameOptionsForRun {
   /** More encoders applied to the same state at every decision, so one run can train students that read different inputs. */
   alsoEncode?: Encoder[];
   onDecision?: (ev: DecisionEvent) => void;
+  /** Game seconds after Pac-Man turns around or passes a junction during which "back" is not offered (see ReverseLock). 0 = off. */
+  reverseLockSeconds?: number;
 }
 
 export interface DecisionEvent {
@@ -76,6 +78,7 @@ export async function playGame(o: GameOptionsForRun): Promise<GameSummary> {
   let failures = 0;
   let stale = 0;
   const estimate = new LatencyEstimate(o.clock === "realtime" ? 250 : 0);
+  const lock = new ReverseLock(Math.round((o.reverseLockSeconds ?? 0) * TPS));
 
   const advance = (n: number, input?: StepInput | null) => {
     for (let i = 0; i < n && s.phase !== "gameover"; i++) step(s, i === 0 && input ? input : {});
@@ -88,7 +91,8 @@ export async function playGame(o: GameOptionsForRun): Promise<GameSummary> {
     }
     const lookahead = o.clock === "realtime" ? lookaheadTiles(s, estimate.value) : 0;
     const dp = findDecisionPoint(s, lookahead);
-    const enc = o.encoder.encode(s, dp);
+    const encoded = o.encoder.encode(s, dp);
+    const enc = lock.blocked(s, findDecisionPoint(s).key) ? withoutBack(encoded) : encoded;
     if (enc.keys.length === 1) {
       advance(1, optionToInput(enc.keys[0], dp));
       continue;

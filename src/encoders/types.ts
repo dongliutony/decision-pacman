@@ -26,6 +26,17 @@ export function optionKeys(dp: DecisionPoint): OptionKey[] {
   return keys;
 }
 
+/** The same decision without the "back" option: dropped from the keys, the criteria, and an encoded `options` object. */
+export function withoutBack(enc: EncodedDecision): EncodedDecision {
+  const { back: _, ...criteria } = enc.criteria;
+  let state = enc.state;
+  if (state && typeof state === "object" && "options" in state) {
+    const { back: __, ...options } = (state as { options: Record<string, unknown> }).options;
+    state = { ...state, options };
+  }
+  return { ...enc, state, criteria, keys: enc.keys.filter((k) => k !== "back") };
+}
+
 /** Maps a chosen option to engine input: exits become turns planned at the junction tile, "back" turns around now. */
 export function optionToInput(key: string, dp: DecisionPoint): StepInput | null {
   if (key === "back") return dp.back ? { reverse: true } : null;

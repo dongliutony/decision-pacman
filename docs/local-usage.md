@@ -69,6 +69,7 @@ More URL parameters:
 - `&speed=2`: the game runs at 2x speed.
 - `&seed=100`: fixes the game's random seed, so every start is the same.
 - `&sound=0`: turns the sound off.
+- `&lock=1`: the back lock. For 1 game second after Pac-Man turns around or passes a junction, "back" is not offered, so a model without memory cannot flip back and forth. The HUD shows `back lock 1s` while it is on. Off by default.
 
 ## 4. Headless games on the command line
 
@@ -85,6 +86,8 @@ npm run headless -- --policy jev --games 1 --seed 100 --max-seconds 60
 npm run headless -- --policy random-1s --games 1 --seed 100 --max-seconds 60
 npm run headless -- --policy greedy --games 1 --seed 100 --max-seconds 60
 ```
+
+Add `--reverse-lock 1` to any of these to turn on the back lock (the same as `&lock=1` in the browser). It is off by default, so ladder numbers stay comparable.
 
 ### The same comparison as the README ladder
 

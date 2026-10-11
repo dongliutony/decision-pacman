@@ -1,4 +1,4 @@
-import { AgentLoop, shouldHold, type DecisionRecord } from "./agent/loop.ts";
+import { AgentLoop, ReverseLock, shouldHold, type DecisionRecord } from "./agent/loop.ts";
 import { DecisionApiError } from "./agent/client.ts";
 import { randomByName, systemOnePolicy } from "./agent/policies.ts";
 import { llmPolicy } from "./agent/llm.ts";
@@ -31,6 +31,8 @@ const config = {
   speed: Number(params.get("speed") ?? "1"),
   /** Hold the game at a junction until the model answers (for slow on-device models). */
   waitForModel: params.get("wait") === "1",
+  /** Game seconds after a turn-around or a passed junction during which "back" is not offered (?lock=1). 0 = off. */
+  reverseLockSeconds: Number(params.get("lock") ?? "0"),
   endpoint: params.get("endpoint") ?? defaultEndpoint,
   seed: Number(params.get("seed") ?? Math.floor(Math.random() * 1e6)),
 };
@@ -139,6 +141,7 @@ const agent = new AgentLoop(
   ENCODERS[config.encoder] ?? ENCODERS[DEFAULT_ENCODER],
 );
 agent.waitForModel = config.waitForModel;
+agent.reverseLock = new ReverseLock(Math.round(config.reverseLockSeconds * TPS));
 
 function syncAgent(): void {
   agent.policy = makePolicy();
@@ -214,7 +217,7 @@ function updateHud(): void {
   $("pellets").textContent = String(game.foodLeft);
   $("tps").textContent = String(tickTimes.length);
   const holding = config.mode === "ai" && config.waitForModel && shouldHold(game, agent.pending);
-  $("who").textContent = config.mode === "ai" ? `${modelName()} · ${config.encoder}${holding ? " · waiting for the model" : ""}` : "keyboard";
+  $("who").textContent = config.mode === "ai" ? `${modelName()} · ${config.encoder}${config.reverseLockSeconds > 0 ? ` · back lock ${config.reverseLockSeconds}s` : ""}${holding ? " · waiting for the model" : ""}` : "keyboard";
 
   const recent = records.slice(-100);
   const lat = recent.map((r) => r.latencyMs);

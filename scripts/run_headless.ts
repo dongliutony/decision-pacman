@@ -25,6 +25,8 @@ const { values: args } = parseArgs({
     seed: { type: "string", default: "100" },
     speed: { type: "string", default: "1" },
     "max-seconds": { type: "string", default: "180" },
+    // Game seconds after Pac-Man turns around or passes a junction during which "back" is not offered. 0 = off.
+    "reverse-lock": { type: "string", default: "0" },
     out: { type: "string", default: "runs" },
   },
 });
@@ -37,7 +39,9 @@ async function main() {
   if (args["base-url"]) env.decisionBaseUrl = args["base-url"];
   const games = Number(args.games);
   const seed0 = Number(args.seed);
-  const tag = `${new Date().toISOString().replace(/[:.]/g, "-")}_${args.policy!.replace(/[^\w.-]/g, "_")}_${args.encoder}_${clock}_p${process.pid}`;
+  const reverseLockSeconds = Number(args["reverse-lock"]);
+  const lockTag = reverseLockSeconds > 0 ? `_lock${reverseLockSeconds}s` : "";
+  const tag = `${new Date().toISOString().replace(/[:.]/g, "-")}_${args.policy!.replace(/[^\w.-]/g, "_")}_${args.encoder}_${clock}${lockTag}_p${process.pid}`;
   const dir = join(args.out!, tag);
   mkdirSync(dir, { recursive: true });
   const logPath = join(dir, "decisions.jsonl");
@@ -56,6 +60,7 @@ async function main() {
       clock,
       speed: Number(args.speed),
       maxSeconds: Number(args["max-seconds"]),
+      reverseLockSeconds,
       onDecision: (ev) =>
         appendFileSync(
           logPath,
@@ -91,6 +96,7 @@ async function main() {
     speed: Number(args.speed),
     games,
     seed0,
+    reverseLockSeconds,
     meanScore: Math.round(mean("score")),
     meanPellets: Math.round(mean("pellets") * 10) / 10,
     meanSeconds: Math.round(mean("secondsPlayed")),

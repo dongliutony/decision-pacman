@@ -1,7 +1,7 @@
 import { findDecisionPoint, isStillAhead, pacTilesPerSecond, type DecisionPoint } from "../engine/decision.ts";
 import { TPS } from "../engine/game.ts";
 import type { GameState, StepInput } from "../engine/types.ts";
-import { optionToInput, type Encoder } from "../encoders/types.ts";
+import { optionToInput, withoutBack, type Encoder } from "../encoders/types.ts";
 import type { Policy } from "./policies.ts";
 
 export interface DecisionRecord {
@@ -60,6 +60,25 @@ export class LatencyEstimate {
 }
 
 /**
+ * Blocks "back" for `ticks` after Pac-Man's next junction changes, which happens when Pac-Man turns
+ * around or passes a junction (corners do not count). Without it, a model with no memory can answer
+ * "back", then "back" again a moment later, and Pac-Man dithers. 0 turns it off.
+ */
+export class ReverseLock {
+  private key: string | null = null;
+  private since = -Infinity;
+  constructor(public ticks = 0) {}
+
+  /** Call at every question with the game and its next junction (no lookahead); true while "back" is blocked. */
+  blocked(s: GameState, junctionKey: string): boolean {
+    if (s.tick < this.since) this.since = -Infinity; // a new game started
+    if (this.key !== null && junctionKey !== this.key) this.since = s.tick;
+    this.key = junctionKey;
+    return this.ticks > 0 && s.tick - this.since < this.ticks;
+  }
+}
+
+/**
  * Browser agent loop: one request in flight, the newest answer wins, and an
  * answer about a junction Pac-Man has already passed is dropped. The game
  * never waits for it.
@@ -72,6 +91,8 @@ export class AgentLoop {
   waitForModel = false;
   /** The junction an in-flight question is about. */
   pending: DecisionPoint | null = null;
+  /** Off by default; see ReverseLock. */
+  reverseLock = new ReverseLock(0);
 
   constructor(
     private hooks: AgentHooks,
@@ -107,7 +128,8 @@ export class AgentLoop {
       }
       const lookahead = this.waitForModel ? 0 : lookaheadTiles(game, this.latency.value);
       const dp = findDecisionPoint(game, lookahead);
-      const enc = this.encoder.encode(game, dp);
+      const encoded = this.encoder.encode(game, dp);
+      const enc = this.reverseLock.blocked(game, findDecisionPoint(game).key) ? withoutBack(encoded) : encoded;
       if (enc.keys.length === 1) {
         const only = optionToInput(enc.keys[0], dp);
         if (only) this.hooks.apply(only);
