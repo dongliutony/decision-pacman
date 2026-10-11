@@ -113,6 +113,7 @@ def main():
     ap.add_argument("--alpha", type=int, default=32)
     ap.add_argument("--max-len", type=int, default=1024)
     ap.add_argument("--eval-every", type=int, default=200)
+    ap.add_argument("--log-every", type=int, default=20, help="print loss, elapsed time, and the time left every N steps")
     ap.add_argument("--val-limit", type=int, default=2000)
     ap.add_argument("--train-limit", type=int, default=None)
     args = ap.parse_args()
@@ -181,8 +182,11 @@ def main():
         opt.step()
         sched.step()
         opt.zero_grad(set_to_none=True)
-        if step % 20 == 0:
-            print(f"step {step}/{steps} loss {loss.item():.4f} lr {sched.get_last_lr()[0]:.2e} {time.time() - t0:.0f}s", flush=True)
+        if step % args.log_every == 0 or step == steps:
+            elapsed = time.time() - t0
+            left = elapsed / step * (steps - step)
+            print(f"step {step}/{steps} loss {loss.item():.4f} lr {sched.get_last_lr()[0]:.2e} {elapsed:.0f}s "
+                  f"({elapsed / step:.1f}s/step, about {left / 60:.0f} min left)", flush=True)
         if step % args.eval_every == 0 or step == steps:
             m = evaluate(model, lm_weight, batcher, val, device, args.batch)
             print(f"eval step {step}: {m}", flush=True)
