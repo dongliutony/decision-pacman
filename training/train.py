@@ -107,6 +107,7 @@ def main():
     ap.add_argument("--data", default="data/sft")
     ap.add_argument("--out", required=True)
     ap.add_argument("--epochs", type=float, default=1.0)
+    ap.add_argument("--steps", type=int, default=None, help="train exactly this many steps instead of --epochs")
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--rank", type=int, default=16)
@@ -162,7 +163,7 @@ def main():
     with open(log_path, "w") as f:
         f.write(json.dumps({"step": 0, **base_metrics}) + "\n")
 
-    steps = math.ceil(len(train) * args.epochs / args.batch)
+    steps = args.steps or math.ceil(len(train) * args.epochs / args.batch)
     opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=0.0)
     warmup = max(1, int(0.03 * steps))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1.0, (s + 1) / warmup) * 0.5 * (1 + math.cos(math.pi * min(1.0, s / steps))))
