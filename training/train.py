@@ -114,6 +114,10 @@ def main():
     ap.add_argument("--max-len", type=int, default=1024)
     ap.add_argument("--eval-every", type=int, default=200)
     ap.add_argument("--log-every", type=int, default=20, help="print loss, elapsed time, and the time left every N steps")
+    ap.add_argument("--grad-checkpoint", choices=["unsloth", "true", "false"], default="unsloth",
+                    help="unsloth: recompute and offload to CPU (least memory, slowest); true: recompute only; false: neither")
+    ap.add_argument("--micro-batch", type=int, default=None,
+                    help="rows per forward/backward pass; gradients add up to the same update as one pass of --batch rows")
     ap.add_argument("--val-limit", type=int, default=2000)
     ap.add_argument("--train-limit", type=int, default=None)
     args = ap.parse_args()
@@ -133,7 +137,7 @@ def main():
     targets = [t for t in TARGETS if t in present]
     print("LoRA targets:", targets, flush=True)
     model = FastLanguageModel.get_peft_model(model, r=args.rank, lora_alpha=args.alpha, lora_dropout=0, target_modules=targets,
-                                             bias="none", use_gradient_checkpointing="unsloth", random_state=3407, max_seq_length=args.max_len)
+                                             bias="none", use_gradient_checkpointing={"unsloth": "unsloth", "true": True, "false": False}[args.grad_checkpoint], random_state=3407, max_seq_length=args.max_len)
     lm_weight = model.get_output_embeddings().weight
 
     train = read_jsonl(os.path.join(args.data, "train.jsonl"), args.train_limit)
@@ -173,11 +177,17 @@ def main():
             pos = 0
         rows = [train[i] for i in order[pos:pos + args.batch]]
         pos += args.batch
-        ids, mask, last, cand, valid, target = batcher(rows, device)
-        logits, _ = option_logits(model, lm_weight, ids, mask, last, cand)
-        logp = masked_log_softmax(logits, valid)
-        loss = -(target * logp.masked_fill(~valid, 0)).sum(dim=-1).mean()
-        loss.backward()
+        mb = args.micro_batch or args.batch
+        total = 0.0
+        for i in range(0, len(rows), mb):
+            ids, mask, last, cand, valid, target = batcher(rows[i:i + mb], device)
+            logits, _ = option_logits(model, lm_weight, ids, mask, last, cand)
+            logp = masked_log_softmax(logits, valid)
+            # Divide by the whole batch, so the summed gradients equal one pass over all of `rows`.
+            part = -(target * logp.masked_fill(~valid, 0)).sum(dim=-1).sum() / len(rows)
+            part.backward()
+            total += part.item()
+        loss = torch.tensor(total)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         sched.step()
