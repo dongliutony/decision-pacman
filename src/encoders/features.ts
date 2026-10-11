@@ -19,9 +19,24 @@ const INSTRUCTIONS =
   "the nearest power pellet. Steps count from Pac-Man, including the corridor up to the junction. " +
   "'back' means turn around right now instead of going to the junction.";
 
+// features-ghosts adds every ghost. A trained student learns the fields from data, so the extra text stays short
+// (every instruction token is prefill latency).
+const INSTRUCTIONS_GHOSTS =
+  INSTRUCTIONS +
+  " ghost2, ghost3, ghost4 (each with _coming) = the next nearest normal ghosts within 15 steps on that path. " +
+  "ghosts = every ghost: name, state (normal, frightened, in_house, returning = eyes, harmless), dir = its heading, " +
+  "steps = shortest path from Pac-Man (null if unreachable). ghost_mode = scatter or chase; all ghosts turn around " +
+  "when ghost_mode_seconds_left reaches 0 (null = never).";
+
 interface OptionFacts {
   ghost: number | null;
   ghost_coming?: boolean;
+  ghost2?: number;
+  ghost2_coming?: boolean;
+  ghost3?: number;
+  ghost3_coming?: boolean;
+  ghost4?: number;
+  ghost4_coming?: boolean;
   edible?: number | null;
   pellets: number;
   food: number | null;
@@ -34,6 +49,12 @@ function isDangerous(g: Ghost): boolean {
 
 function isEdible(g: Ghost): boolean {
   return g.state === "active" && g.frightened;
+}
+
+function ghostState(g: Ghost): string {
+  if (g.state === "house" || g.state === "leaving") return "in_house";
+  if (g.state === "eaten" || g.state === "entering") return "returning";
+  return g.frightened ? "frightened" : "normal";
 }
 
 function ghostTile(g: Ghost): { x: number; y: number } {
@@ -52,13 +73,25 @@ interface PathTile {
  * `offset` converts them to steps from Pac-Man, and `prefix` lists the tiles
  * Pac-Man passes before reaching that exit (the corridor to the junction).
  */
-function factsFor(s: GameState, dist: Int16Array, offset: number, prefix: PathTile[]): OptionFacts {
+function factsFor(
+  s: GameState,
+  dist: Int16Array,
+  offset: number,
+  prefix: PathTile[],
+  allGhosts = false,
+  /** Filled with each ghost's steps through this option (any state, no horizon), by index in s.ghosts. */
+  reach: (number | null)[] = [],
+): OptionFacts {
   const at = (x: number, y: number) => (y < 0 || y >= ROWS ? -1 : dist[index(x, y)]);
 
   let ghost: number | null = null;
   let coming = false;
   let edible: number | null = null;
+  const near: [number, boolean][] = [];
   const consider = (g: Ghost, total: number, isComing: boolean) => {
+    const i = s.ghosts.indexOf(g);
+    if (reach[i] == null || total < reach[i]!) reach[i] = total;
+    if (isDangerous(g) && total <= GHOST_HORIZON) near.push([total, isComing]);
     if (isDangerous(g) && total <= GHOST_HORIZON && (ghost === null || total < ghost)) {
       ghost = total;
       coming = isComing;
@@ -109,38 +142,68 @@ function factsFor(s: GameState, dist: Int16Array, offset: number, prefix: PathTi
   const round = (v: number | null) => (v === null ? null : Math.round(v * 10) / 10);
   const facts: OptionFacts = { ghost: round(ghost), pellets, food: round(food) };
   if (ghost !== null) facts.ghost_coming = coming;
+  if (allGhosts) {
+    // near[0] is the nearest ghost already reported; a stable sort keeps the engine's ghost order on ties.
+    near.sort((a, b) => a[0] - b[0]);
+    const slots = [["ghost2", "ghost2_coming"], ["ghost3", "ghost3_coming"], ["ghost4", "ghost4_coming"]] as const;
+    near.slice(1, 4).forEach(([d, c], k) => {
+      facts[slots[k][0]] = round(d)!;
+      facts[slots[k][1]] = c;
+    });
+  }
   if (s.frightTicks > 0) facts.edible = round(edible);
   if (power !== null) facts.power = round(power);
   return facts;
 }
 
-export const featuresEncoder: Encoder = {
-  name: "features",
-  encode(s: GameState, dp: DecisionPoint): EncodedDecision {
-    const keys = optionKeys(dp);
-    const firstSteps = dp.distance - (dp.path.length - 1);
-    const corridor: PathTile[] = dp.path.map((t, i) => ({ x: t.x, y: t.y, steps: firstSteps + i }));
-    const options: Partial<Record<OptionKey, OptionFacts>> = {};
-    for (const key of keys) {
-      if (key === "back") {
-        // Turn around now: distances through the tile behind Pac-Man.
-        const first = dp.path[0];
-        options.back = factsFor(s, distancesThrough(first.x, first.y, dp.back as Dir), -firstSteps, []);
-      } else {
-        options[key] = factsFor(s, distancesThrough(dp.x, dp.y, key), dp.distance, corridor);
+function makeFeaturesEncoder(name: string, allGhosts: boolean): Encoder {
+  return {
+    name,
+    encode(s: GameState, dp: DecisionPoint): EncodedDecision {
+      const keys = optionKeys(dp);
+      const firstSteps = dp.distance - (dp.path.length - 1);
+      const corridor: PathTile[] = dp.path.map((t, i) => ({ x: t.x, y: t.y, steps: firstSteps + i }));
+      const options: Partial<Record<OptionKey, OptionFacts>> = {};
+      const reach: (number | null)[] = s.ghosts.map(() => null);
+      for (const key of keys) {
+        if (key === "back") {
+          // Turn around now: distances through the tile behind Pac-Man.
+          const first = dp.path[0];
+          options.back = factsFor(s, distancesThrough(first.x, first.y, dp.back as Dir), -firstSteps, [], allGhosts, reach);
+        } else {
+          options[key] = factsFor(s, distancesThrough(dp.x, dp.y, key), dp.distance, corridor, allGhosts, reach);
+        }
       }
-    }
 
-    const state: Record<string, unknown> = {
-      lives: s.lives,
-      pellets_left: s.foodLeft,
-      to_junction: Math.round(dp.distance * 10) / 10,
-    };
-    if (s.frightTicks > 0) state.frightened_seconds_left = Math.round((s.frightTicks / TPS) * 10) / 10;
-    state.options = options;
+      const state: Record<string, unknown> = {
+        lives: s.lives,
+        pellets_left: s.foodLeft,
+        to_junction: Math.round(dp.distance * 10) / 10,
+      };
+      if (s.frightTicks > 0) state.frightened_seconds_left = Math.round((s.frightTicks / TPS) * 10) / 10;
+      if (allGhosts) {
+        state.ghost_mode = s.mode;
+        state.ghost_mode_seconds_left = Number.isFinite(s.modeTicks) ? Math.round((s.modeTicks / TPS) * 10) / 10 : null;
+        state.ghosts = s.ghosts.map((g, i) => ({
+          name: g.name,
+          state: ghostState(g),
+          dir: g.dir,
+          steps: reach[i] === null ? null : Math.round(reach[i]! * 10) / 10,
+        }));
+      }
+      state.options = options;
 
-    const criteria: Record<string, string | null> = {};
-    for (const key of keys) criteria[key] = key === "back" ? "turn around now" : null;
-    return { encoder: "features", state, instructions: INSTRUCTIONS, criteria, keys, decision: dp };
-  },
-};
+      const criteria: Record<string, string | null> = {};
+      for (const key of keys) criteria[key] = key === "back" ? "turn around now" : null;
+      return { encoder: name, state, instructions: allGhosts ? INSTRUCTIONS_GHOSTS : INSTRUCTIONS, criteria, keys, decision: dp };
+    },
+  };
+}
+
+export const featuresEncoder: Encoder = makeFeaturesEncoder("features", false);
+
+/**
+ * Features plus every ghost the engine knows about without looking ahead: ghost2-ghost4 per option, each ghost's
+ * name, state, heading, and steps from Pac-Man, and the scatter/chase mode with the time until all ghosts reverse.
+ */
+export const featuresGhostsEncoder: Encoder = makeFeaturesEncoder("features-ghosts", true);

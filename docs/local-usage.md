@@ -87,6 +87,10 @@ npm run headless -- --policy random-1s --games 1 --seed 100 --max-seconds 60
 npm run headless -- --policy greedy --games 1 --seed 100 --max-seconds 60
 ```
 
+Two more names for experiments:
+- `--policy oracle-pellets-5s`: the rollout search valued by pellets eaten instead of points. It sees 5 seconds of the future, so it is a labeler and a reference, not a ladder player.
+- `--encoder features-ghosts`: `features` plus every ghost (`ghost2`-`ghost4` per option, and each ghost's name, state, heading, and steps), with the scatter/chase mode and its timer. It is meant for students trained on it; Jev read the earlier ghost-list formats poorly.
+
 Add `--reverse-lock 1` to any of these to turn on the back lock (the same as `&lock=1` in the browser). It is off by default, so ladder numbers stay comparable.
 
 ### The same comparison as the README ladder

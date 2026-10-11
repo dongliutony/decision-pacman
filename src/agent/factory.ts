@@ -22,7 +22,7 @@ export interface PolicyEnv {
  * Policies by name: "random", "random-1s" (one random exit per junction; once per second, go on or turn back
  * at 3:1; "random-2.5s" sets the interval), "greedy", "jev" (TypeSafe's hosted Jev), "openai:<model>" (OpenAI's Decisions API,
  * e.g. "openai:gpt-6-luna"), "oracle" (engine rollouts; "oracle-8s-x2"
- * sets an 8 s horizon and 2 samples), "teacher", "teacher-think", and "-peek5s" variants that also show a 5 s simulated future per option (the
+ * sets an 8 s horizon and 2 samples; "oracle-pellets-5s" values pellets eaten instead of points), "teacher", "teacher-think", and "-peek5s" variants that also show a 5 s simulated future per option (the
  * chat model from TEACHER_BASE_URL / TEACHER_MODEL), "llm:<model>" (a plain Ollama chat model answering in JSON
  * constrained to the legal options), or any decision model name served on the /v1/systemone endpoint.
  */
@@ -48,8 +48,14 @@ export function makePolicy(name: string, seed: number, env: PolicyEnv): Policy {
       apiKey: process.env.OPENAI_API_KEY,
     });
   }
-  const oracle = /^oracle(?:-(\d+(?:\.\d+)?)s)?(?:-x(\d+))?$/.exec(name);
-  if (oracle) return oraclePolicy({ horizonSeconds: oracle[1] ? Number(oracle[1]) : 5, samples: oracle[2] ? Number(oracle[2]) : 1 });
+  const oracle = /^oracle(-pellets)?(?:-(\d+(?:\.\d+)?)s)?(?:-x(\d+))?$/.exec(name);
+  if (oracle) {
+    return oraclePolicy({
+      objective: oracle[1] ? "pellets" : "score",
+      horizonSeconds: oracle[2] ? Number(oracle[2]) : 5,
+      samples: oracle[3] ? Number(oracle[3]) : 1,
+    });
+  }
   if (name.startsWith("llm:")) return llmPolicy({ baseUrl: env.decisionBaseUrl, model: name.slice("llm:".length) });
   const teacher = /^teacher(-think)?(?:-peek(\d+(?:\.\d+)?)s)?$/.exec(name);
   if (teacher) {

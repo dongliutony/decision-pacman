@@ -15,7 +15,16 @@ export interface OracleOptions {
   horizonSeconds?: number;
   /** Rollouts per option with different random streams for frightened ghosts. */
   samples?: number;
+  /** What a rollout earns: game points ("score", the default), or 10 per pellet eaten ("pellets"). */
+  objective?: Objective;
 }
+
+/**
+ * "score" counts every game point, so eating frightened ghosts (200-1600) and power pellets (50) pulls the search.
+ * "pellets" counts 10 per pellet of either kind, the unit the ladder measures; the death penalty stays, because
+ * a dead Pac-Man eats nothing and the third death ends the game.
+ */
+export type Objective = "score" | "pellets";
 
 const DEATH_PENALTY = 100_000;
 
@@ -23,7 +32,7 @@ function clone(s: GameState): GameState {
   return structuredClone(s);
 }
 
-function nearestFood(s: GameState): number {
+export function nearestFood(s: GameState): number {
   const dist = distancesFrom(wrapX(Math.round(s.pac.x)), Math.round(s.pac.y));
   let best = 99;
   for (let y = 0; y < ROWS; y++) {
@@ -88,9 +97,16 @@ function countPower(s: GameState): number {
 }
 
 /** Value of playing `key` now: score gained over the horizon, minus a large penalty for dying (less if later). */
-export function rolloutValue(s0: GameState, enc: EncodedDecision, key: string, horizonTicks: number, rngSeed: number): number {
+export function rolloutValue(
+  s0: GameState,
+  enc: EncodedDecision,
+  key: string,
+  horizonTicks: number,
+  rngSeed: number,
+  objective: Objective = "score",
+): number {
   const s = rollout(s0, enc, key, horizonTicks, rngSeed);
-  const gained = s.score - s0.score;
+  const gained = objective === "pellets" ? 10 * (s.stats.pelletsEaten - s0.stats.pelletsEaten) : s.score - s0.score;
   if (s.stats.deaths > s0.stats.deaths) {
     // Dying later is better than dying sooner.
     return -DEATH_PENALTY + (s.stats.ticksPlaying - s0.stats.ticksPlaying) * 10 + gained;
@@ -101,8 +117,9 @@ export function rolloutValue(s0: GameState, enc: EncodedDecision, key: string, h
 export function oraclePolicy(opts: OracleOptions = {}): Policy {
   const horizonTicks = Math.round((opts.horizonSeconds ?? 5) * TPS);
   const samples = opts.samples ?? 1;
+  const objective = opts.objective ?? "score";
   return {
-    name: `oracle-${opts.horizonSeconds ?? 5}s`,
+    name: `oracle-${objective === "pellets" ? "pellets-" : ""}${opts.horizonSeconds ?? 5}s`,
     async decide(enc, _signal, game): Promise<PolicyDecision> {
       if (!game) throw new Error("the oracle needs the live game state");
       const started = performance.now();
@@ -111,7 +128,7 @@ export function oraclePolicy(opts: OracleOptions = {}): Policy {
       let bestValue = -Infinity;
       for (const key of enc.keys) {
         let total = 0;
-        for (let i = 0; i < samples; i++) total += rolloutValue(game, enc, key, horizonTicks, i);
+        for (let i = 0; i < samples; i++) total += rolloutValue(game, enc, key, horizonTicks, i, objective);
         const value = total / samples;
         values[key] = Math.round(value * 10) / 10;
         if (value > bestValue) {

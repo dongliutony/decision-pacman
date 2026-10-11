@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { oraclePolicy, peek, rolloutValue } from "../src/agent/oracle.ts";
+import { makePolicy } from "../src/agent/factory.ts";
+import { nearestFood, oraclePolicy, peek, rollout, rolloutValue } from "../src/agent/oracle.ts";
 import { createGame, step } from "../src/engine/game.ts";
 import { findDecisionPoint } from "../src/engine/decision.ts";
 import { ENCODERS } from "../src/encoders/index.ts";
@@ -59,6 +60,44 @@ describe("ascii-full encoder", () => {
       expect(o.dies_after_s).toBeNull();
       expect(o.pellets).toBeGreaterThan(0);
       expect(o.points).toBe(o.pellets * 10 + o.power_pellets * 50);
+    }
+  });
+});
+
+describe("pellet oracle", () => {
+  it("values an option by pellets eaten, not by points", () => {
+    const s = playing();
+    for (let i = 0; i < 120; i++) step(s);
+    const enc = ENCODERS.features.encode(s, findDecisionPoint(s));
+    for (const key of enc.keys) {
+      const end = rollout(s, enc, key, 150, 0);
+      if (end.stats.deaths > s.stats.deaths) continue;
+      const eaten = end.stats.pelletsEaten - s.stats.pelletsEaten;
+      expect(rolloutValue(s, enc, key, 150, 0, "pellets")).toBe(10 * eaten - nearestFood(end));
+    }
+  });
+
+  it("differs from the score objective only by points that are not 10 per pellet", () => {
+    const s = playing();
+    for (let i = 0; i < 120; i++) step(s);
+    const enc = ENCODERS.features.encode(s, findDecisionPoint(s));
+    for (const key of enc.keys) {
+      const end = rollout(s, enc, key, 150, 0);
+      if (end.stats.deaths > s.stats.deaths) continue;
+      const otherPoints = end.score - s.score - 10 * (end.stats.pelletsEaten - s.stats.pelletsEaten);
+      expect(rolloutValue(s, enc, key, 150, 0, "score") - rolloutValue(s, enc, key, 150, 0, "pellets")).toBe(otherPoints);
+    }
+  });
+
+  it("is built by name, searches without a model, and keeps oracle-5s unchanged", async () => {
+    const s = playing();
+    for (let i = 0; i < 120; i++) step(s);
+    const enc = ENCODERS.features.encode(s, findDecisionPoint(s));
+    for (const name of ["oracle-pellets-5s", "oracle-pellets-3s", "oracle-5s"]) {
+      const p = makePolicy(name, 1, { decisionBaseUrl: "http://127.0.0.1:9" });
+      expect(p.name).toBe(name);
+      const d = await p.decide(enc, undefined, s);
+      expect(Object.keys(d.values!).sort()).toEqual([...enc.keys].sort());
     }
   });
 });
