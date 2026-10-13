@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# One-time setup on a CUDA server: the training environment and the GGUF converter.
+# One-time setup on a CUDA server.
 #
-#   training/setup_cuda.sh
+#   training/setup_cuda.sh                  # the training environment
+#   WITH_VLLM=1 training/setup_cuda.sh          # also vLLM in its own environment, for serving
+#   WITH_GGUF=1 training/setup_cuda.sh          # also the llama.cpp GGUF converter (EXPORT=gguf only)
 #
 # Creates training/.venv (uv) with a CUDA 12.8 PyTorch build and the packages in
-# training/pyproject.toml, then clones llama.cpp at a pinned tag into
-# $LLAMA_CPP_DIR (default ~/llama.cpp) with its own .venv for convert_hf_to_gguf.py,
-# which training/export_gguf.sh expects. Prints each GPU's compute capability:
+# training/pyproject.toml. With WITH_VLLM=1, training/.venv-vllm gets vLLM (kept apart, since it
+# pins its own PyTorch); scripts/serve_vllm.sh uses it with VLLM=training/.venv-vllm/bin/vllm,
+# or use the vllm your servers already have. With WITH_GGUF=1, llama.cpp at a pinned tag goes into
+# $LLAMA_CPP_DIR (default ~/llama.cpp) with its own .venv for convert_hf_to_gguf.py, which
+# training/export_gguf.sh expects. Prints each GPU's compute capability:
 # H200 is 9.0 (Hopper), RTX Pro 6000 and RTX 5090 are 12.0 (Blackwell). Blackwell
 # needs a cu128 (or newer) build of PyTorch, which this installs.
 set -euo pipefail
@@ -36,6 +40,16 @@ print("kernel check passed on every GPU")
 EOF
 training/.venv/bin/python -c "import unsloth, transformers, peft; print('unsloth', unsloth.__version__, 'transformers', transformers.__version__, 'peft', peft.__version__)"
 
+if [ "${WITH_VLLM:-0}" = 1 ]; then
+  [ -d training/.venv-vllm ] || uv venv training/.venv-vllm --python 3.12
+  uv pip install --python training/.venv-vllm/bin/python vllm
+  training/.venv-vllm/bin/vllm --version
+fi
+
+if [ "${WITH_GGUF:-0}" != 1 ]; then
+  echo "setup done (GGUF converter skipped; WITH_GGUF=1 adds it)"
+  exit 0
+fi
 # GGUF converter, with its own environment as training/export_gguf.sh expects.
 if [ ! -d "$LLAMA_CPP_DIR" ]; then
   git clone --depth 1 -b "$LLAMA_CPP_TAG" https://github.com/ggml-org/llama.cpp.git "$LLAMA_CPP_DIR"
