@@ -60,11 +60,19 @@ def make_target(r: dict, keys: list[str], kind: str, temperature: float, smoothi
     raise ValueError(f"unknown target kind {kind}")
 
 
+def run_order(path: str) -> str:
+    """Sort key for a run folder that ignores its leading start time, so duplicate states across runs
+    resolve the same way however the runs' start times fell (gen_teacher_data names folders
+    <timestamp>_<player>_<labeler>_<encoder>_s<seed>_p<pid>)."""
+    name = os.path.basename(os.path.dirname(path))
+    return name.split("_", 1)[1] if "_" in name else name
+
+
 def load_records(split_dir: str, kind: str = "values", encoder: str | None = None,
                  temperature: float = 50.0, smoothing: float = 0.0) -> list[dict]:
     """Labeled records of a split, deduplicated on the chosen encoding, with `target` and the chosen encoding set."""
     rows, seen = [], set()
-    for path in sorted(glob.glob(os.path.join(split_dir, "*", "states.jsonl"))):
+    for path in sorted(glob.glob(os.path.join(split_dir, "*", "states.jsonl")), key=run_order):
         for line in open(path):
             r = json.loads(line)
             e = encoding(r, encoder)

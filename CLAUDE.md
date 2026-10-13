@@ -32,6 +32,12 @@ npm run headless -- --policy tev1:4b --encoder features --clock realtime --games
 npm run gen-data                 # teacher-labeled training states (refuses evaluation seeds)
 npm run record -- --model tev1:4b --seconds 30 --seed 100 --out docs/media/demo.mp4
 
+# Oracle students on a CUDA server (docs/guides/distill-oracle-gpu.md)
+scripts/make_oracle_dataset.sh p1          # data/p1 + data/sft_p1 (deterministic, CPU)
+training/setup_cuda.sh                      # server: training/.venv + llama.cpp converter
+GPUS="0 1" training/train_students.sh       # server: both students, then Q8_0 GGUFs
+scripts/import_students.sh students_p1_*.tar && scripts/eval_students.sh p1 10   # Mac
+
 # Python tests (stdlib; MLX test skips off Apple silicon)
 cd training && python3 -m unittest test_build_sft
 cd training && python -m unittest test_train_mlx

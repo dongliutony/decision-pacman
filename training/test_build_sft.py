@@ -58,3 +58,26 @@ class LoadRecordsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunOrderTest(unittest.TestCase):
+    def write_run(self, root, name, rows):
+        os.makedirs(os.path.join(root, name))
+        with open(os.path.join(root, name, "states.jsonl"), "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+
+    def test_duplicates_resolve_the_same_whatever_the_start_times(self):
+        # The same state reached by two players; which copy is kept must not depend on
+        # the timestamps that start each run folder's name.
+        kept = []
+        for oracle_stamp, random_stamp in [("2026-01-01T00-00-00-001Z", "2026-01-01T00-00-00-002Z"),
+                                           ("2026-01-01T00-00-00-002Z", "2026-01-01T00-00-00-001Z")]:
+            d = tempfile.mkdtemp()
+            self.write_run(d, f"{oracle_stamp}_oracle-pellets-5s_oracle-pellets-5s_features_s900_p11",
+                           [record(900, {"x": 1}, "up", values={"up": 2, "back": 1})])
+            self.write_run(d, f"{random_stamp}_random_oracle-pellets-5s_features_s940_p12",
+                           [record(940, {"x": 1}, "back", values={"up": 1, "back": 2})])
+            kept.append([r["seed"] for r in load_records(d, "values")])
+        self.assertEqual(kept[0], kept[1])
+        self.assertEqual(len(kept[0]), 1)
