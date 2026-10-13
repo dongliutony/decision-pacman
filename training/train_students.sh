@@ -63,8 +63,8 @@ done
 echo
 for name in "${students[@]}"; do
   echo "== $name"
-  grep -E "^(before training|eval step)" "$out/$name.log"
-  grep -E "^step " "$out/$name.log" | tail -n 1
+  grep -E "^(before training|eval step)" "$out/$name.log" || true
+  grep -E "^step " "$out/$name.log" | tail -n 1 || true
 done
 (cd "$out/gguf" && { sha256sum ./*.gguf 2>/dev/null || shasum -a 256 ./*.gguf; } > SHA256SUMS)
 files=(gguf)
