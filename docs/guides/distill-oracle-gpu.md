@@ -95,7 +95,15 @@ for s in features ghosts; do python training/merge.py --adapter runs/students_p1
 MERGED=1 GPUS="6 7" scripts/serve_vllm.sh - pacman-0.8b-p1-features=runs/students_p1_0.8b/sft_features/merged pacman-0.8b-p1-ghosts=runs/students_p1_0.8b/sft_ghosts/merged
 ```
 
-Before trusting any numbers, check parity: the agreement that step 5 reports should match the last `eval step` line of training to within about a point (the validation rows are a different sample of the same set, so not exactly).
+Before an evaluation that takes hours, send one request and check that every option gets a probability:
+
+```bash
+curl -s http://127.0.0.1:11500/v1/systemone -d '{"model":"pacman-0.8b-p1-features","state":{"lives":3},"questions":{"move":{"type":"choice","instructions":"test","criteria":{"up":null,"left":null,"back":"turn around now"}}}}'
+```
+
+The adapter rests on three vLLM behaviors that the tests on the Mac could only fake: `/tokenize` applies the chat template with `chat_template_kwargs` (thinking off) and returns the same token ids as training; `/v1/completions` with `prompt_logprobs` returns the log-probability of the actual letter token even when it is not the most likely token; and vLLM attaches LoRA to Qwen3.5's `in_proj_*` and `out_proj` layers (if not, `vllm.log` says so at startup, and the merged mode above applies). If any decision fails, the adapter reports it, and `runs/serve_<time>/adapter.log` and `vllm.log` show why.
+
+Then check parity: the agreement that step 5 reports should match the last `eval step` line of training to within about 2 points. The two use different samples of the same validation set (1,000 shuffled rows against the first 2,000), so they do not match exactly.
 
 ## 5. Evaluate
 
